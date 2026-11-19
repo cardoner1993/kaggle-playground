@@ -4,3 +4,4 @@ data/
 submissions/
 .claude/
 optuna.db
+preds/

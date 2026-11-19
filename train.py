@@ -41,7 +41,8 @@ def glm_offsets(te_fit, y_fit, te_apply):
     return [glm.decision_function(logit(te)) for te in (te_fit, *te_apply)]
 
 
-def run(data_dir: Path, folds: int = 5, seed: int = 42, prep=lambda df: df, params=PARAMS, keys=None, glm=False):
+def run(data_dir: Path, folds: int = 5, seed: int = 42, prep=lambda df: df, params=PARAMS, keys=None, glm=False,
+        save_dir: Path | None = None):
     train = prep(pd.read_csv(data_dir / "train.csv"))
     test = prep(pd.read_csv(data_dir / "test.csv"))
     sample = pd.read_csv(data_dir / "sample_submission.csv")
@@ -65,8 +66,10 @@ def run(data_dir: Path, folds: int = 5, seed: int = 42, prep=lambda df: df, para
         splitter = KFold(folds, shuffle=True, random_state=seed)
 
     oof = np.zeros(len(X))
+    fold_ids = np.zeros(len(X), dtype=int)
     preds = np.zeros(len(X_test))
-    for tr, va in splitter.split(X, y):
+    for fold, (tr, va) in enumerate(splitter.split(X, y)):
+        fold_ids[va] = fold
         # early stopping watches a slice of the training rows, never the scored fold
         fit, es = train_test_split(tr, test_size=0.1, random_state=seed, stratify=y.iloc[tr] if binary else None)
         X_fit, X_es, X_va, X_te = X.iloc[fit], X.iloc[es], X.iloc[va], X_test
@@ -97,6 +100,11 @@ def run(data_dir: Path, folds: int = 5, seed: int = 42, prep=lambda df: df, para
             predict = lambda d, off: model.predict(d)
         oof[va] = predict(X_va, off_va)
         preds += predict(X_te, off_te) / folds
+
+    if save_dir:
+        save_dir.mkdir(parents=True, exist_ok=True)
+        pd.DataFrame({id_col: train[id_col], "fold": fold_ids, "pred": oof}).to_csv(save_dir / "oof.csv", index=False)
+        pd.DataFrame({id_col: test[id_col], "pred": preds}).to_csv(save_dir / "test.csv", index=False)
 
     score = score_fn(y, oof)
     return score, sample.assign(**{target: preds})
