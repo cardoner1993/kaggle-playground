@@ -18,7 +18,7 @@ def run(data_dir: Path, folds: int = 5, seed: int = 42):
     id_col, target = sample.columns[:2]
 
     features = [c for c in train.columns if c not in (id_col, target)]
-    for c in train[features].select_dtypes("object"):
+    for c in train[features].select_dtypes(["object", "str"]):
         cats = pd.concat([train[c], test[c]]).astype("category").cat.categories
         train[c] = pd.Categorical(train[c], categories=cats)
         test[c] = pd.Categorical(test[c], categories=cats)
