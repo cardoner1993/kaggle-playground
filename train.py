@@ -11,7 +11,7 @@ from sklearn.model_selection import KFold, StratifiedKFold
 PARAMS = {"n_estimators": 5000, "learning_rate": 0.05, "num_leaves": 63, "verbose": -1}
 
 
-def run(data_dir: Path, folds: int = 5, seed: int = 42, prep=lambda df: df):
+def run(data_dir: Path, folds: int = 5, seed: int = 42, prep=lambda df: df, params=PARAMS):
     train = prep(pd.read_csv(data_dir / "train.csv"))
     test = prep(pd.read_csv(data_dir / "test.csv"))
     sample = pd.read_csv(data_dir / "sample_submission.csv")
@@ -36,7 +36,7 @@ def run(data_dir: Path, folds: int = 5, seed: int = 42, prep=lambda df: df):
     oof = np.zeros(len(X))
     preds = np.zeros(len(X_test))
     for tr, va in splitter.split(X, y):
-        model = model_cls(**PARAMS, random_state=seed)
+        model = model_cls(**params, random_state=seed)
         model.fit(
             X.iloc[tr], y.iloc[tr],
             eval_X=X.iloc[va], eval_y=y.iloc[va],
