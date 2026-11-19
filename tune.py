@@ -26,7 +26,7 @@ def objective(trial):
 
 study = optuna.create_study(
     study_name=comp, storage="sqlite:///optuna.db", load_if_exists=True,
-    direction="maximize", sampler=optuna.samplers.TPESampler(seed=42),
+    direction="maximize",
 )
 study.optimize(objective, n_trials=trials)
 print(f"best 3-fold CV {study.best_value:.5f}")
