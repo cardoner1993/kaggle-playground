@@ -6,7 +6,10 @@ import lightgbm as lgb
 import numpy as np
 import pandas as pd
 from sklearn.metrics import roc_auc_score, root_mean_squared_error
+from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import KFold, StratifiedKFold, train_test_split
+from sklearn.pipeline import make_pipeline
+from sklearn.preprocessing import StandardScaler
 
 PARAMS = {"n_estimators": 5000, "learning_rate": 0.05, "num_leaves": 63, "verbose": -1}
 
@@ -20,7 +23,7 @@ def target_encode(keys_fit, y_fit, keys_apply, folds=5, seed=0, smoothing=20):
         for c in kf:
             g = yf.groupby(kf[c].to_numpy()).agg(["sum", "count"])
             rate = (g["sum"] + smoothing * prior) / (g["count"] + smoothing)
-            out[f"te_{c}"] = ka[c].map(rate).fillna(prior).to_numpy()
+            out[f"te_{c}"] = pd.Series(ka[c].to_numpy()).map(rate).fillna(prior).to_numpy()
         return pd.DataFrame(out, index=ka.index)
 
     oof = pd.DataFrame(0.0, index=keys_fit.index, columns=[f"te_{c}" for c in keys_fit])
@@ -29,7 +32,16 @@ def target_encode(keys_fit, y_fit, keys_apply, folds=5, seed=0, smoothing=20):
     return oof, [rates(keys_fit, y_fit, k) for k in keys_apply]
 
 
-def run(data_dir: Path, folds: int = 5, seed: int = 42, prep=lambda df: df, params=PARAMS, keys=None):
+def glm_offsets(te_fit, y_fit, te_apply):
+    """Logistic regression on encoding logits; returns its logit for te_fit and each te_apply frame."""
+    logit = lambda te: np.log(te.clip(1e-6, 1 - 1e-6) / (1 - te.clip(1e-6, 1 - 1e-6)))
+    glm = make_pipeline(StandardScaler(), LogisticRegression(solver="newton-cholesky", max_iter=200))
+    glm.fit(logit(te_fit), y_fit)
+    assert glm[-1].n_iter_[0] < 200, "GLM did not converge"
+    return [glm.decision_function(logit(te)) for te in (te_fit, *te_apply)]
+
+
+def run(data_dir: Path, folds: int = 5, seed: int = 42, prep=lambda df: df, params=PARAMS, keys=None, glm=False):
     train = prep(pd.read_csv(data_dir / "train.csv"))
     test = prep(pd.read_csv(data_dir / "test.csv"))
     sample = pd.read_csv(data_dir / "sample_submission.csv")
@@ -58,10 +70,13 @@ def run(data_dir: Path, folds: int = 5, seed: int = 42, prep=lambda df: df, para
         # early stopping watches a slice of the training rows, never the scored fold
         fit, es = train_test_split(tr, test_size=0.1, random_state=seed, stratify=y.iloc[tr] if binary else None)
         X_fit, X_es, X_va, X_te = X.iloc[fit], X.iloc[es], X.iloc[va], X_test
+        off_fit = off_es = off_va = off_te = None
         if K is not None:
             te_fit, (te_es, te_va, te_te) = target_encode(
                 K.iloc[fit], y.iloc[fit], [K.iloc[es], K.iloc[va], K_test], seed=seed
             )
+            if glm:
+                off_fit, off_es, off_va, off_te = glm_offsets(te_fit, y.iloc[fit], [te_es, te_va, te_te])
             X_fit, X_es, X_va, X_te = (
                 pd.concat([a, b], axis=1) for a, b in
                 ((X_fit, te_fit), (X_es, te_es), (X_va, te_va), (X_te, te_te))
@@ -69,12 +84,19 @@ def run(data_dir: Path, folds: int = 5, seed: int = 42, prep=lambda df: df, para
 
         model = model_cls(**params, random_state=seed)
         model.fit(
-            X_fit, y.iloc[fit], eval_X=X_es, eval_y=y.iloc[es],
+            X_fit, y.iloc[fit], init_score=off_fit,
+            eval_X=X_es, eval_y=y.iloc[es], eval_init_score=None if off_es is None else [off_es],
             callbacks=[lgb.early_stopping(100, verbose=False)],
         )
-        predict = (lambda d: model.predict_proba(d)[:, 1]) if binary else model.predict
-        oof[va] = predict(X_va)
-        preds += predict(X_te) / folds
+        if glm:
+            # raw_score excludes init_score, so add the GLM logit back before the sigmoid
+            predict = lambda d, off: 1 / (1 + np.exp(-(model.predict(d, raw_score=True) + off)))
+        elif binary:
+            predict = lambda d, off: model.predict_proba(d)[:, 1]
+        else:
+            predict = lambda d, off: model.predict(d)
+        oof[va] = predict(X_va, off_va)
+        preds += predict(X_te, off_te) / folds
 
     score = score_fn(y, oof)
     return score, sample.assign(**{target: preds})

@@ -25,7 +25,7 @@ def drop_noise(df):
 
 
 def value_keys(df):
-    return df.select_dtypes("number").copy()
+    return df.copy()
 
 
 def digit_keys(df):
@@ -48,6 +48,7 @@ VARIANTS = {
     "all_three": {"prep": lambda df: drop_noise(as_category(flag_count(df)))},
     "te_values": {"keys": value_keys},
     "te_digits": {"keys": digit_keys},
+    "glm_offset": {"keys": digit_keys, "glm": True},
 }
 
 if __name__ == "__main__":

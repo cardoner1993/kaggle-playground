@@ -15,11 +15,12 @@ def test_run_binary(tmp_path):
     df.iloc[2000:].drop(columns="label").to_csv(tmp_path / "test.csv", index=False)
     df.iloc[2000:][["id", "label"]].assign(label=0.5).to_csv(tmp_path / "sample_submission.csv", index=False)
 
-    score, sub = run(tmp_path, folds=3)
+    for kwargs in ({}, {"keys": lambda X: X.round(1), "glm": True}):
+        score, sub = run(tmp_path, folds=3, **kwargs)
 
-    assert score > 0.85
-    assert list(sub.columns) == ["id", "label"] and len(sub) == 1000
-    assert sub.label.between(0, 1).all()
+        assert score > 0.85
+        assert list(sub.columns) == ["id", "label"] and len(sub) == 1000
+        assert sub.label.between(0, 1).all()
 
 
 def test_target_encoding_does_not_leak(tmp_path):
