@@ -11,17 +11,19 @@ from sklearn.model_selection import KFold, StratifiedKFold
 PARAMS = {"n_estimators": 5000, "learning_rate": 0.05, "num_leaves": 63, "verbose": -1}
 
 
-def run(data_dir: Path, folds: int = 5, seed: int = 42, prep=lambda df: df, params=PARAMS):
+def run(data_dir: Path, folds: int = 5, seed: int = 42, prep=lambda df: df, params=PARAMS, extra=None):
     train = prep(pd.read_csv(data_dir / "train.csv"))
     test = prep(pd.read_csv(data_dir / "test.csv"))
     sample = pd.read_csv(data_dir / "sample_submission.csv")
     id_col, target = sample.columns[:2]
+    # extra rows join every training fold but are never scored
+    extra = train.iloc[:0] if extra is None else prep(extra)
 
     features = [c for c in train.columns if c not in (id_col, target)]
     for c in train[features].select_dtypes(["object", "str"]):
         cats = pd.concat([train[c], test[c]]).astype("category").cat.categories
-        train[c] = pd.Categorical(train[c], categories=cats)
-        test[c] = pd.Categorical(test[c], categories=cats)
+        for df in (train, test, extra):
+            df[c] = pd.Categorical(df[c], categories=cats)
 
     X, y, X_test = train[features], train[target], test[features]
     binary = y.nunique() == 2
@@ -38,7 +40,7 @@ def run(data_dir: Path, folds: int = 5, seed: int = 42, prep=lambda df: df, para
     for tr, va in splitter.split(X, y):
         model = model_cls(**params, random_state=seed)
         model.fit(
-            X.iloc[tr], y.iloc[tr],
+            pd.concat([X.iloc[tr], extra[features]]), pd.concat([y.iloc[tr], extra[target]]),
             eval_X=X.iloc[va], eval_y=y.iloc[va],
             callbacks=[lgb.early_stopping(100, verbose=False)],
         )

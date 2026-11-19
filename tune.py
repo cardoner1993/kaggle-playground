@@ -8,12 +8,13 @@ from train import PARAMS, run
 
 comp = sys.argv[1] if len(sys.argv) > 1 else "playground-series-s6e11"
 trials = int(sys.argv[2]) if len(sys.argv) > 2 else 40
+study_name = sys.argv[3] if len(sys.argv) > 3 else comp
 data = Path("data") / comp
 
 
 def objective(trial):
     params = PARAMS | {
-        "num_leaves": trial.suggest_int("num_leaves", 15, 255, log=True),
+        "num_leaves": trial.suggest_int("num_leaves", 4, 63, log=True),
         "min_child_samples": trial.suggest_int("min_child_samples", 10, 500, log=True),
         "reg_lambda": trial.suggest_float("reg_lambda", 1e-3, 30, log=True),
         "reg_alpha": trial.suggest_float("reg_alpha", 1e-3, 30, log=True),
@@ -25,7 +26,7 @@ def objective(trial):
 
 
 study = optuna.create_study(
-    study_name=comp, storage="sqlite:///optuna.db", load_if_exists=True,
+    study_name=study_name, storage="sqlite:///optuna.db", load_if_exists=True,
     direction="maximize",
 )
 study.optimize(objective, n_trials=trials)
