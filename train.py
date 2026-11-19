@@ -6,26 +6,43 @@ import lightgbm as lgb
 import numpy as np
 import pandas as pd
 from sklearn.metrics import roc_auc_score, root_mean_squared_error
-from sklearn.model_selection import KFold, StratifiedKFold
+from sklearn.model_selection import KFold, StratifiedKFold, train_test_split
 
 PARAMS = {"n_estimators": 5000, "learning_rate": 0.05, "num_leaves": 63, "verbose": -1}
 
 
-def run(data_dir: Path, folds: int = 5, seed: int = 42, prep=lambda df: df, params=PARAMS, extra=None):
+def target_encode(keys_fit, y_fit, keys_apply, folds=5, seed=0, smoothing=20):
+    """Out-of-fold rates for keys_fit, full-fit rates for each frame in keys_apply."""
+    prior = y_fit.mean()
+
+    def rates(kf, yf, ka):
+        out = {}
+        for c in kf:
+            g = yf.groupby(kf[c].to_numpy()).agg(["sum", "count"])
+            rate = (g["sum"] + smoothing * prior) / (g["count"] + smoothing)
+            out[f"te_{c}"] = ka[c].map(rate).fillna(prior).to_numpy()
+        return pd.DataFrame(out, index=ka.index)
+
+    oof = pd.DataFrame(0.0, index=keys_fit.index, columns=[f"te_{c}" for c in keys_fit])
+    for a, b in KFold(folds, shuffle=True, random_state=seed).split(keys_fit):
+        oof.iloc[b] = rates(keys_fit.iloc[a], y_fit.iloc[a], keys_fit.iloc[b]).to_numpy()
+    return oof, [rates(keys_fit, y_fit, k) for k in keys_apply]
+
+
+def run(data_dir: Path, folds: int = 5, seed: int = 42, prep=lambda df: df, params=PARAMS, keys=None):
     train = prep(pd.read_csv(data_dir / "train.csv"))
     test = prep(pd.read_csv(data_dir / "test.csv"))
     sample = pd.read_csv(data_dir / "sample_submission.csv")
     id_col, target = sample.columns[:2]
-    # extra rows join every training fold but are never scored
-    extra = train.iloc[:0] if extra is None else prep(extra)
 
     features = [c for c in train.columns if c not in (id_col, target)]
     for c in train[features].select_dtypes(["object", "str"]):
         cats = pd.concat([train[c], test[c]]).astype("category").cat.categories
-        for df in (train, test, extra):
-            df[c] = pd.Categorical(df[c], categories=cats)
+        train[c] = pd.Categorical(train[c], categories=cats)
+        test[c] = pd.Categorical(test[c], categories=cats)
 
     X, y, X_test = train[features], train[target], test[features]
+    K, K_test = (keys(X), keys(X_test)) if keys else (None, None)
     binary = y.nunique() == 2
     # ponytail: binary->AUC, else RMSE; set the metric per episode when it differs
     if binary:
@@ -38,15 +55,26 @@ def run(data_dir: Path, folds: int = 5, seed: int = 42, prep=lambda df: df, para
     oof = np.zeros(len(X))
     preds = np.zeros(len(X_test))
     for tr, va in splitter.split(X, y):
+        # early stopping watches a slice of the training rows, never the scored fold
+        fit, es = train_test_split(tr, test_size=0.1, random_state=seed, stratify=y.iloc[tr] if binary else None)
+        X_fit, X_es, X_va, X_te = X.iloc[fit], X.iloc[es], X.iloc[va], X_test
+        if K is not None:
+            te_fit, (te_es, te_va, te_te) = target_encode(
+                K.iloc[fit], y.iloc[fit], [K.iloc[es], K.iloc[va], K_test], seed=seed
+            )
+            X_fit, X_es, X_va, X_te = (
+                pd.concat([a, b], axis=1) for a, b in
+                ((X_fit, te_fit), (X_es, te_es), (X_va, te_va), (X_te, te_te))
+            )
+
         model = model_cls(**params, random_state=seed)
         model.fit(
-            pd.concat([X.iloc[tr], extra[features]]), pd.concat([y.iloc[tr], extra[target]]),
-            eval_X=X.iloc[va], eval_y=y.iloc[va],
+            X_fit, y.iloc[fit], eval_X=X_es, eval_y=y.iloc[es],
             callbacks=[lgb.early_stopping(100, verbose=False)],
         )
         predict = (lambda d: model.predict_proba(d)[:, 1]) if binary else model.predict
-        oof[va] = predict(X.iloc[va])
-        preds += predict(X_test) / folds
+        oof[va] = predict(X_va)
+        preds += predict(X_te) / folds
 
     score = score_fn(y, oof)
     return score, sample.assign(**{target: preds})
