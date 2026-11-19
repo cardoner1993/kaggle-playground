@@ -11,9 +11,9 @@ from sklearn.model_selection import KFold, StratifiedKFold
 PARAMS = {"n_estimators": 5000, "learning_rate": 0.05, "num_leaves": 63, "verbose": -1}
 
 
-def run(data_dir: Path, folds: int = 5, seed: int = 42):
-    train = pd.read_csv(data_dir / "train.csv")
-    test = pd.read_csv(data_dir / "test.csv")
+def run(data_dir: Path, folds: int = 5, seed: int = 42, prep=lambda df: df):
+    train = prep(pd.read_csv(data_dir / "train.csv"))
+    test = prep(pd.read_csv(data_dir / "test.csv"))
     sample = pd.read_csv(data_dir / "sample_submission.csv")
     id_col, target = sample.columns[:2]
 
