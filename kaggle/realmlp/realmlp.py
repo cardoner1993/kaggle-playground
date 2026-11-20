@@ -17,6 +17,7 @@ from sklearn.model_selection import StratifiedKFold, train_test_split
 from sklearn.preprocessing import KBinsDiscretizer, TargetEncoder
 
 SEED, FOLDS = 42, 5
+MODEL_SEEDS = [42, 7, 123]
 np.random.seed(SEED)
 torch.manual_seed(SEED)
 
@@ -86,12 +87,14 @@ for fold, (tr, va) in enumerate(StratifiedKFold(FOLDS, shuffle=True, random_stat
     for k in ("es", "va", "test"):
         parts[k][te_names] = enc.transform(parts[k][combo_cols])
 
-    model = RealMLP_TD_Classifier(**params)
-    model.fit(parts["fit"], y.iloc[fit], parts["es"], y.iloc[es])
-    oof[va] = model.predict_proba(parts["va"])[:, 1]
-    preds += model.predict_proba(parts["test"])[:, 1] / FOLDS
+    # folds stay on SEED; only the network initialisation varies across MODEL_SEEDS
+    for s in MODEL_SEEDS:
+        model = RealMLP_TD_Classifier(**params | {"random_state": s})
+        model.fit(parts["fit"], y.iloc[fit], parts["es"], y.iloc[es])
+        oof[va] += model.predict_proba(parts["va"])[:, 1] / len(MODEL_SEEDS)
+        preds += model.predict_proba(parts["test"])[:, 1] / FOLDS / len(MODEL_SEEDS)
+        torch.cuda.empty_cache()
     print(f"fold {fold} AUC {roc_auc_score(y.iloc[va], oof[va]):.5f}", flush=True)
-    torch.cuda.empty_cache()
 
 print(f"OOF AUC {roc_auc_score(y, oof):.5f}")
 pd.DataFrame({"id": train["id"], "fold": fold_ids, "pred": oof}).to_csv("oof.csv", index=False)
