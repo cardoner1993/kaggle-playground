@@ -24,6 +24,17 @@ def drop_noise(df):
     return df.drop(columns=NOISE)
 
 
+def frequency(df):
+    num = df.select_dtypes("number").columns
+    return df.assign(**{f"{c}_freq": df[c].map(df[c].value_counts(normalize=True)) for c in num})
+
+
+def plain_digits(df):
+    cents = {c: (df[c] * 100).round().astype("int64") for c in DECIMALS}
+    return df.assign(**{f"{c}_d1n": v // 10 % 10 for c, v in cents.items()},
+                     **{f"{c}_centsn": v % 100 for c, v in cents.items()})
+
+
 def value_keys(df):
     return df.copy()
 
@@ -49,6 +60,9 @@ VARIANTS = {
     "te_values": {"keys": value_keys},
     "te_digits": {"keys": digit_keys},
     "glm_offset": {"keys": digit_keys, "glm": True},
+    "te_freq": {"keys": digit_keys, "prep": frequency},
+    "te_plain": {"keys": digit_keys, "prep": plain_digits},
+    "te_freq_plain": {"keys": digit_keys, "prep": lambda df: plain_digits(frequency(df))},
 }
 
 if __name__ == "__main__":

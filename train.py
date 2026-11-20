@@ -43,18 +43,17 @@ def glm_offsets(te_fit, y_fit, te_apply):
 
 def run(data_dir: Path, folds: int = 5, seed: int = 42, prep=lambda df: df, params=PARAMS, keys=None, glm=False,
         save_dir: Path | None = None):
-    train = prep(pd.read_csv(data_dir / "train.csv"))
-    test = prep(pd.read_csv(data_dir / "test.csv"))
     sample = pd.read_csv(data_dir / "sample_submission.csv")
     id_col, target = sample.columns[:2]
+    train, test = pd.read_csv(data_dir / "train.csv"), pd.read_csv(data_dir / "test.csv")
+    # prep only ever sees feature columns, so it cannot build features from the target or id
+    X, y = prep(train.drop(columns=[id_col, target])), train[target]
+    X_test = prep(test.drop(columns=[id_col]))
 
-    features = [c for c in train.columns if c not in (id_col, target)]
-    for c in train[features].select_dtypes(["object", "str"]):
-        cats = pd.concat([train[c], test[c]]).astype("category").cat.categories
-        train[c] = pd.Categorical(train[c], categories=cats)
-        test[c] = pd.Categorical(test[c], categories=cats)
-
-    X, y, X_test = train[features], train[target], test[features]
+    for c in X.select_dtypes(["object", "str"]):
+        cats = pd.concat([X[c], X_test[c]]).astype("category").cat.categories
+        X[c] = pd.Categorical(X[c], categories=cats)
+        X_test[c] = pd.Categorical(X_test[c], categories=cats)
     K, K_test = (keys(X), keys(X_test)) if keys else (None, None)
     binary = y.nunique() == 2
     # ponytail: binary->AUC, else RMSE; set the metric per episode when it differs
