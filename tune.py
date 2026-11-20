@@ -9,8 +9,9 @@ from train import config_run_kwargs, run
 
 config, trials, study_name = sys.argv[1], int(sys.argv[2]), sys.argv[3]
 cfg = tomllib.loads(Path(config).read_text())
+model = sys.argv[4] if len(sys.argv) > 4 else next(iter(cfg["models"]))
 data = Path("data") / cfg["comp"]
-kwargs = config_run_kwargs(cfg)
+kwargs = config_run_kwargs(cfg, model)
 TUNED = ["num_leaves", "min_child_samples", "reg_lambda", "reg_alpha", "colsample_bytree", "subsample"]
 
 

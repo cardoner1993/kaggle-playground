@@ -58,5 +58,5 @@ if __name__ == "__main__":
     cfg = tomllib.loads(Path(config).read_text())
     for name in names or VARIANTS:
         score, _ = run(Path("data") / cfg["comp"], params=cfg["params"],
-                       tags={"model": cfg["model"], "variant": name}, **VARIANTS[name])
+                       tags={"model": "experiment", "variant": name}, **VARIANTS[name])
         print(f"{name:<12} CV {score:.5f}", flush=True)

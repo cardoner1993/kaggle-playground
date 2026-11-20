@@ -6,12 +6,13 @@ Learning repo for the monthly Kaggle Playground Series (tabular). One pipeline r
 
 - Install: `uv sync` (macOS also needs `brew install libomp` for LightGBM)
 - Data: `data/<comp-slug>/{train,test,sample_submission}.csv` (gitignored). Accept the rules on Kaggle first.
-- Episode config: `episodes/<episode>.toml` (comp, model name, keys, decimals, LightGBM params). It is the source of truth for the best single model.
-- Train: `uv run python train.py episodes/s6e11.toml` writes `preds/<comp>/<model>/{oof,test}.csv` and `submissions/<comp>/<model>-<timestamp>-cv<score>.csv`
+- Episode config: `episodes/<episode>.toml` holds comp, decimals, shared LightGBM `[params]`, one `[models.<name>]` per local model, `[kernels.<name>]` per Kaggle GPU model and the `stack` member list. It is the source of truth for what gets submitted.
+- Pipeline: `uv run python pipeline.py episodes/s6e11.toml [--gpu] [--force]` trains every model whose `preds/<comp>/<model>/oof.csv` is missing, pushes missing kernels only with `--gpu`, stacks, and prints the submit command (it never submits). `--force` retrains everything.
+- Train one model: `uv run python train.py episodes/s6e11.toml [model ...]` writes `preds/<comp>/<model>/{oof,test}.csv` and `submissions/<comp>/<model>-<timestamp>-cv<score>.csv`
 - Feature tests: `uv run python experiments.py episodes/s6e11.toml [variant ...]`
-- Tune: `uv run python tune.py episodes/s6e11.toml <trials> <study-name>`, then paste the printed `[params]` into the config
+- Tune: `uv run python tune.py episodes/s6e11.toml <trials> <study-name> [model]`, then paste the printed `[params]` into the config
 - Stack: `uv run python stack.py <comp> <member> ...` (members are folders in `preds/<comp>/`)
-- Kaggle GPU models: `kaggle/<model>/` + `kernel-metadata.json`; smoke-test locally with `SMOKE_ROWS=5000 INPUT_DIR=data/<comp>`, then `uv run kaggle kernels push -p kaggle/<model>` and `uv run kaggle kernels output <user>/<slug> -p preds/<comp>/<model>`
+- Kaggle GPU models: script + `kernel-metadata.json` template in `kaggle/<model>/`; feature code is per episode, so a new episode points `[kernels.<name>] script` at its own script. Smoke-test locally with `SMOKE_ROWS=5000 INPUT_DIR=data/<comp>`. The pipeline writes the episode's metadata (`<owner>/<episode>-<name>-oof`) into `build/` and pushes from there.
 - Tracking: every `run()` and stack logs to MLflow (`sqlite:///mlflow.db`, one experiment per comp). UI: `uv run mlflow ui --backend-store-uri sqlite:///mlflow.db`
 - Test: `uv run pytest -q`
 - Submit: `uv run kaggle competitions submit <comp> -f <file> -m "<msg>"`

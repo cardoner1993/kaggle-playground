@@ -8,3 +8,4 @@ preds/
 mlflow.db
 mlartifacts/
 mlruns/
+build/

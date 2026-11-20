@@ -23,8 +23,9 @@ torch.manual_seed(SEED)
 
 data = next(Path(os.environ.get("INPUT_DIR", "/kaggle/input")).rglob("train.csv")).parent
 train, test = (pd.read_csv(data / f, nrows=SMOKE_ROWS or None) for f in ("train.csv", "test.csv"))
-X, y = train.drop(columns=["id", "is_fraud"]), train["is_fraud"]
-X_test = test.drop(columns=["id"])
+id_col, target = pd.read_csv(data / "sample_submission.csv", nrows=1).columns[:2]
+X, y = train.drop(columns=[id_col, target]), train[target]
+X_test = test.drop(columns=[id_col])
 
 num_cols = X.select_dtypes("number").columns.tolist()
 DECIMALS = ["amount_usd", "hours_since_last_txn", "velocity_score", "distance_from_home_km"]
@@ -97,5 +98,5 @@ for fold, (tr, va) in enumerate(StratifiedKFold(FOLDS, shuffle=True, random_stat
     print(f"fold {fold} AUC {roc_auc_score(y.iloc[va], oof[va]):.5f}", flush=True)
 
 print(f"OOF AUC {roc_auc_score(y, oof):.5f}")
-pd.DataFrame({"id": train["id"], "fold": fold_ids, "pred": oof}).to_csv("oof.csv", index=False)
-pd.DataFrame({"id": test["id"], "pred": preds}).to_csv("test.csv", index=False)
+pd.DataFrame({id_col: train[id_col], "fold": fold_ids, "pred": oof}).to_csv("oof.csv", index=False)
+pd.DataFrame({id_col: test[id_col], "pred": preds}).to_csv("test.csv", index=False)

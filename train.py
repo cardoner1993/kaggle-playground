@@ -34,15 +34,16 @@ def digit_keys(df, decimals):
     return out
 
 
-def config_run_kwargs(cfg):
-    """Turn an episode config into run() arguments."""
+def config_run_kwargs(cfg, model):
+    """Turn one [models.<model>] entry of an episode config into run() arguments."""
+    m = cfg["models"][model]
     keys = {
         "none": None,
         "values": value_keys,
         "digits": lambda df: digit_keys(df, cfg["decimals"]),
-    }[cfg["keys"]]
-    return {"params": cfg["params"], "keys": keys, "glm": cfg.get("glm", False),
-            "tags": {"model": cfg["model"], "keys": cfg["keys"]}}
+    }[m.get("keys", "none")]
+    return {"params": cfg["params"] | m.get("params", {}), "keys": keys, "glm": m.get("glm", False),
+            "tags": {"model": model, "keys": m.get("keys", "none")}}
 
 
 def target_encode(keys_fit, y_fit, keys_apply, folds=5, seed=0, smoothing=20):
@@ -157,15 +158,21 @@ def _run(data_dir, folds, seed, prep, params, keys, glm, save_dir):
     return score, sample.assign(**{target: preds})
 
 
-if __name__ == "__main__":
-    config = Path(sys.argv[1])
+def train(config: Path, model: str):
     cfg = tomllib.loads(config.read_text())
-    comp, model = cfg["comp"], cfg["model"]
-    kwargs = config_run_kwargs(cfg)
+    comp = cfg["comp"]
+    kwargs = config_run_kwargs(cfg, model)
     kwargs["tags"]["config"] = str(config)
 
     score, submission = run(Path("data") / comp, save_dir=Path("preds") / comp / model, **kwargs)
     out = Path("submissions") / comp / f"{model}-{datetime.now():%Y%m%d-%H%M}-cv{score:.5f}.csv"
     out.parent.mkdir(parents=True, exist_ok=True)
     submission.to_csv(out, index=False)
-    print(f"CV {score:.5f} -> {out}")
+    print(f"{model} CV {score:.5f} -> {out}")
+    return score
+
+
+if __name__ == "__main__":
+    config = Path(sys.argv[1])
+    for model in sys.argv[2:] or tomllib.loads(config.read_text())["models"]:
+        train(config, model)

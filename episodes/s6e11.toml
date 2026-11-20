@@ -1,11 +1,9 @@
 comp = "playground-series-s6e11"
-model = "lgbm_te"
-keys = "digits"  # none | values | digits
 decimals = ["amount_usd", "hours_since_last_txn", "distance_from_home_km",
             "account_balance_usd", "velocity_score", "merchant_risk_score"]
-glm = false
+stack = ["lgbm_glm", "lgbm_te", "realmlp"]
 
-# 3-leaf params from Optuna study s6e11-te-digits, CV 0.95025
+# 3-leaf params from Optuna study s6e11-te-digits, CV 0.95025; shared by every [models.*] unless overridden
 [params]
 n_estimators = 20000
 learning_rate = 0.02
@@ -17,3 +15,14 @@ colsample_bytree = 0.808393244512384
 subsample = 0.9641801257754312
 subsample_freq = 1
 verbose = -1
+
+[models.lgbm_te]
+keys = "digits"  # none | values | digits
+
+[models.lgbm_glm]
+keys = "digits"
+glm = true
+
+[kernels.realmlp]
+script = "kaggle/realmlp/realmlp.py"
+gpu_minutes = 45
