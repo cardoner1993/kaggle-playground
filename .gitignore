@@ -5,3 +5,6 @@ submissions/
 .claude/
 optuna.db
 preds/
+mlflow.db
+mlartifacts/
+mlruns/

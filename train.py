@@ -1,8 +1,11 @@
-import argparse
+import subprocess
+import sys
+import tomllib
 from datetime import datetime
 from pathlib import Path
 
 import lightgbm as lgb
+import mlflow
 import numpy as np
 import pandas as pd
 from sklearn.metrics import roc_auc_score, root_mean_squared_error
@@ -12,6 +15,34 @@ from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
 
 PARAMS = {"n_estimators": 5000, "learning_rate": 0.05, "num_leaves": 63, "verbose": -1}
+mlflow.set_tracking_uri("sqlite:///mlflow.db")
+
+
+def value_keys(df):
+    return df.copy()
+
+
+def digit_keys(df, decimals):
+    out = value_keys(df)
+    for c in decimals:
+        cents = (df[c] * 100).round().astype("int64")
+        out[f"{c}_int"] = cents // 100
+        out[f"{c}_int10"] = cents // 1000
+        out[f"{c}_d1"] = cents // 10 % 10
+        out[f"{c}_cents"] = cents % 100
+        out[f"{c}_lead"] = cents.astype(str).str[0]
+    return out
+
+
+def config_run_kwargs(cfg):
+    """Turn an episode config into run() arguments."""
+    keys = {
+        "none": None,
+        "values": value_keys,
+        "digits": lambda df: digit_keys(df, cfg["decimals"]),
+    }[cfg["keys"]]
+    return {"params": cfg["params"], "keys": keys, "glm": cfg.get("glm", False),
+            "tags": {"model": cfg["model"], "keys": cfg["keys"]}}
 
 
 def target_encode(keys_fit, y_fit, keys_apply, folds=5, seed=0, smoothing=20):
@@ -42,7 +73,23 @@ def glm_offsets(te_fit, y_fit, te_apply):
 
 
 def run(data_dir: Path, folds: int = 5, seed: int = 42, prep=lambda df: df, params=PARAMS, keys=None, glm=False,
-        save_dir: Path | None = None):
+        save_dir: Path | None = None, tags: dict | None = None):
+    mlflow.set_experiment(data_dir.name)
+    with mlflow.start_run(nested=mlflow.active_run() is not None):
+        # the auto git commit tag is misleading when the tree has uncommitted changes
+        dirty = subprocess.run(["git", "status", "--porcelain", "--untracked-files=no"],
+                               capture_output=True, text=True).stdout != ""
+        mlflow.set_tags((tags or {}) | {"git_dirty": dirty})
+        mlflow.log_params(params | {"seed": seed, "folds": folds, "glm": glm, "keys": keys is not None,
+                                    "prep": getattr(prep, "__name__", "?")})
+        score, submission = _run(data_dir, folds, seed, prep, params, keys, glm, save_dir)
+        mlflow.log_metric("cv", score)
+        if save_dir:
+            mlflow.log_artifacts(str(save_dir), "preds")
+    return score, submission
+
+
+def _run(data_dir, folds, seed, prep, params, keys, glm, save_dir):
     sample = pd.read_csv(data_dir / "sample_submission.csv")
     id_col, target = sample.columns[:2]
     train, test = pd.read_csv(data_dir / "train.csv"), pd.read_csv(data_dir / "test.csv")
@@ -99,6 +146,7 @@ def run(data_dir: Path, folds: int = 5, seed: int = 42, prep=lambda df: df, para
             predict = lambda d, off: model.predict(d)
         oof[va] = predict(X_va, off_va)
         preds += predict(X_te, off_te) / folds
+        mlflow.log_metric("fold_score", score_fn(y.iloc[va], oof[va]), step=fold)
 
     if save_dir:
         save_dir.mkdir(parents=True, exist_ok=True)
@@ -110,12 +158,14 @@ def run(data_dir: Path, folds: int = 5, seed: int = 42, prep=lambda df: df, para
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("comp", help="competition slug, e.g. playground-series-s6e11")
-    args = parser.parse_args()
+    config = Path(sys.argv[1])
+    cfg = tomllib.loads(config.read_text())
+    comp, model = cfg["comp"], cfg["model"]
+    kwargs = config_run_kwargs(cfg)
+    kwargs["tags"]["config"] = str(config)
 
-    score, submission = run(Path("data") / args.comp)
-    out = Path("submissions") / args.comp / f"{datetime.now():%Y%m%d-%H%M}-cv{score:.5f}.csv"
+    score, submission = run(Path("data") / comp, save_dir=Path("preds") / comp / model, **kwargs)
+    out = Path("submissions") / comp / f"{model}-{datetime.now():%Y%m%d-%H%M}-cv{score:.5f}.csv"
     out.parent.mkdir(parents=True, exist_ok=True)
     submission.to_csv(out, index=False)
     print(f"CV {score:.5f} -> {out}")

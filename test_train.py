@@ -1,8 +1,15 @@
+import mlflow
 import numpy as np
 import pandas as pd
+import pytest
 from sklearn.datasets import make_classification
 
 from train import run
+
+
+@pytest.fixture(autouse=True)
+def tmp_tracking(tmp_path):
+    mlflow.set_tracking_uri(f"sqlite:///{tmp_path}/mlflow.db")
 
 
 def test_run_binary(tmp_path):

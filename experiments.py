@@ -1,8 +1,8 @@
-import json
 import sys
+import tomllib
 from pathlib import Path
 
-from train import run
+from train import digit_keys, run, value_keys
 
 FLAGS = ["is_foreign_transaction", "is_new_merchant", "used_vpn", "ip_country_mismatch",
          "billing_shipping_mismatch", "is_ai_generated_scam_attempt"]
@@ -35,20 +35,8 @@ def plain_digits(df):
                      **{f"{c}_centsn": v % 100 for c, v in cents.items()})
 
 
-def value_keys(df):
-    return df.copy()
-
-
-def digit_keys(df):
-    out = value_keys(df)
-    for c in DECIMALS:
-        cents = (df[c] * 100).round().astype("int64")
-        out[f"{c}_int"] = cents // 100
-        out[f"{c}_int10"] = cents // 1000
-        out[f"{c}_d1"] = cents // 10 % 10
-        out[f"{c}_cents"] = cents % 100
-        out[f"{c}_lead"] = cents.astype(str).str[0]
-    return out
+def digits(df):
+    return digit_keys(df, DECIMALS)
 
 
 VARIANTS = {
@@ -58,16 +46,17 @@ VARIANTS = {
     "drop_noise": {"prep": drop_noise},
     "all_three": {"prep": lambda df: drop_noise(as_category(flag_count(df)))},
     "te_values": {"keys": value_keys},
-    "te_digits": {"keys": digit_keys},
-    "glm_offset": {"keys": digit_keys, "glm": True},
-    "te_freq": {"keys": digit_keys, "prep": frequency},
-    "te_plain": {"keys": digit_keys, "prep": plain_digits},
-    "te_freq_plain": {"keys": digit_keys, "prep": lambda df: plain_digits(frequency(df))},
+    "te_digits": {"keys": digits},
+    "glm_offset": {"keys": digits, "glm": True},
+    "te_freq": {"keys": digits, "prep": frequency},
+    "te_plain": {"keys": digits, "prep": plain_digits},
+    "te_freq_plain": {"keys": digits, "prep": lambda df: plain_digits(frequency(df))},
 }
 
 if __name__ == "__main__":
-    comp, params_file, *names = sys.argv[1:]
-    params = json.loads(Path(params_file).read_text())
+    config, *names = sys.argv[1:]
+    cfg = tomllib.loads(Path(config).read_text())
     for name in names or VARIANTS:
-        score, _ = run(Path("data") / comp, params=params, **VARIANTS[name])
+        score, _ = run(Path("data") / cfg["comp"], params=cfg["params"],
+                       tags={"model": cfg["model"], "variant": name}, **VARIANTS[name])
         print(f"{name:<12} CV {score:.5f}", flush=True)

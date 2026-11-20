@@ -1,6 +1,7 @@
 import sys
 from pathlib import Path
 
+import mlflow
 import numpy as np
 import pandas as pd
 from sklearn.linear_model import LogisticRegression
@@ -13,7 +14,7 @@ sample = pd.read_csv(data / "sample_submission.csv")
 id_col, target = sample.columns[:2]
 y = pd.read_csv(data / "train.csv", usecols=[id_col, target]).set_index(id_col)[target]
 
-models = sorted(p.name for p in pred_dir.iterdir() if (p / "oof.csv").exists())
+models = sys.argv[2:] or sorted(p.name for p in pred_dir.iterdir() if (p / "oof.csv").exists())
 oofs = {m: pd.read_csv(pred_dir / m / "oof.csv").set_index(id_col) for m in models}
 tests = {m: pd.read_csv(pred_dir / m / "test.csv").set_index(id_col) for m in models}
 folds = oofs[models[0]]["fold"]
@@ -47,3 +48,11 @@ print(f"stack CV {score:.5f}")
 out = Path("submissions") / comp / f"stack-{'+'.join(models)}-cv{score:.5f}.csv"
 sample.assign(**{target: stacker.predict_proba(X_test)[:, 1]}).to_csv(out, index=False)
 print("->", out)
+
+mlflow.set_tracking_uri("sqlite:///mlflow.db")
+mlflow.set_experiment(comp)
+with mlflow.start_run(run_name="stack"):
+    mlflow.set_tags({"model": "stack", "members": "+".join(models)})
+    mlflow.log_params({f"weight_{m}": w for m, w in zip(models, stacker.coef_[0])})
+    mlflow.log_metrics({"cv": score} | {f"member_{m}": roc_auc_score(y, oofs[m]["pred"]) for m in models})
+    mlflow.log_artifact(str(out))
