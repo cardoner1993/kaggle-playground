@@ -26,3 +26,9 @@ glm = true
 [kernels.realmlp]
 script = "kaggle/realmlp/realmlp.py"
 gpu_minutes = 45
+
+[kernels.realmlp.features]
+decimals = ["amount_usd", "hours_since_last_txn", "velocity_score", "distance_from_home_km"]
+combos = [["merchant_category", "card_type", "txn_count_last_24h"], ["merchant_category", "customer_age"]]
+bins = {merchant_risk_score = [7], hours_since_last_txn = [500, 1000]}
+te = ["hours_since_last_txn"]

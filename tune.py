@@ -1,14 +1,13 @@
 import sys
-import tomllib
 from pathlib import Path
 
 import mlflow
 import optuna
 
-from train import config_run_kwargs, run
+from train import config_run_kwargs, load_config, run
 
 config, trials, study_name = sys.argv[1], int(sys.argv[2]), sys.argv[3]
-cfg = tomllib.loads(Path(config).read_text())
+cfg = load_config(config)
 model = sys.argv[4] if len(sys.argv) > 4 else next(iter(cfg["models"]))
 data = Path("data") / cfg["comp"]
 kwargs = config_run_kwargs(cfg, model)

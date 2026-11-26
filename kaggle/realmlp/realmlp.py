@@ -28,9 +28,8 @@ X, y = train.drop(columns=[id_col, target]), train[target]
 X_test = test.drop(columns=[id_col])
 
 num_cols = X.select_dtypes("number").columns.tolist()
-DECIMALS = ["amount_usd", "hours_since_last_txn", "velocity_score", "distance_from_home_km"]
-COMBOS = [("merchant_category", "card_type", "txn_count_last_24h"), ("merchant_category", "customer_age")]
-BINS = {"merchant_risk_score": [7], "hours_since_last_txn": [500, 1000]}
+# pipeline.py prepends FEATURES from [kernels.<name>.features]; run the copy from `pipeline.py <config> --build`
+DECIMALS, COMBOS, BINS = FEATURES["decimals"], FEATURES["combos"], FEATURES["bins"]  # noqa: F821
 
 
 def as_codes(train_vals, apply_vals):
@@ -58,7 +57,7 @@ def features(fit_df, df):
 
 # category codes and bins are unsupervised, so fitting them on all train rows does not leak labels
 X_feat, X_test_feat = features(X, X), features(X, X_test)
-combo_cols = ["_".join(c) + "_" for c in COMBOS] + ["hours_since_last_txn"]
+combo_cols = ["_".join(c) + "_" for c in COMBOS] + FEATURES["te"]  # noqa: F821
 
 params = {
     "random_state": SEED, "verbosity": 1, "val_metric_name": "1-auc_ovr",

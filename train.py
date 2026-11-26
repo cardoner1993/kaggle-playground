@@ -34,6 +34,23 @@ def digit_keys(df, decimals):
     return out
 
 
+def decimal_cols(df):
+    """Float columns holding values with at most 2 decimals, like money."""
+    v = df.select_dtypes("float")
+    cents = v * 100
+    two_dp = np.isclose(cents, cents.round(), atol=1e-6) | v.isna()
+    return [c for c in v if (v[c] % 1 != 0).mean() > 0.5 and two_dp[c].mean() > 0.99]
+
+
+def load_config(path):
+    cfg = tomllib.loads(Path(path).read_text())
+    if "decimals" not in cfg:
+        data = Path("data") / cfg["comp"]
+        drop = pd.read_csv(data / "sample_submission.csv", nrows=1).columns[:2]
+        cfg["decimals"] = decimal_cols(pd.read_csv(data / "train.csv", nrows=50_000).drop(columns=drop))
+    return cfg
+
+
 def config_run_kwargs(cfg, model):
     """Turn one [models.<model>] entry of an episode config into run() arguments."""
     m = cfg["models"][model]
@@ -159,7 +176,7 @@ def _run(data_dir, folds, seed, prep, params, keys, glm, save_dir):
 
 
 def train(config: Path, model: str):
-    cfg = tomllib.loads(config.read_text())
+    cfg = load_config(config)
     comp = cfg["comp"]
     kwargs = config_run_kwargs(cfg, model)
     kwargs["tags"]["config"] = str(config)
@@ -174,5 +191,5 @@ def train(config: Path, model: str):
 
 if __name__ == "__main__":
     config = Path(sys.argv[1])
-    for model in sys.argv[2:] or tomllib.loads(config.read_text())["models"]:
+    for model in sys.argv[2:] or load_config(config)["models"]:
         train(config, model)

@@ -4,7 +4,7 @@ import pandas as pd
 import pytest
 from sklearn.datasets import make_classification
 
-from train import run
+from train import decimal_cols, run
 
 
 @pytest.fixture(autouse=True)
@@ -41,3 +41,10 @@ def test_target_encoding_does_not_leak(tmp_path):
     score, _ = run(tmp_path, folds=3, keys=lambda X: X[["noise_key"]])
 
     assert score < 0.56
+
+
+def test_decimal_cols():
+    rng = np.random.default_rng(0)
+    df = pd.DataFrame({"money": rng.uniform(0, 500, 1000).round(2), "whole": rng.integers(0, 9, 1000).astype(float),
+                       "raw": rng.normal(size=1000)})
+    assert decimal_cols(df) == ["money"]
