@@ -45,7 +45,8 @@ stacker.fit(X, y)
 print("weights", dict(zip(models, stacker.coef_[0].round(3))))
 print(f"stack CV {score:.5f}")
 
-out = Path("submissions") / comp / f"stack-{'+'.join(models)}-cv{score:.5f}.csv"
+name = "+".join(models) if len(models) <= 6 else f"{len(models)}members"
+out = Path("submissions") / comp / f"stack-{name}-cv{score:.5f}.csv"
 sample.assign(**{target: stacker.predict_proba(X_test)[:, 1]}).to_csv(out, index=False)
 print("->", out)
 

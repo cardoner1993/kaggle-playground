@@ -12,6 +12,7 @@ Learning repo for the monthly Kaggle Playground Series (tabular). One pipeline r
 - Feature tests: `uv run python experiments.py episodes/s6e11.toml [variant ...]`
 - Tune: `uv run python tune.py episodes/s6e11.toml <trials> <study-name> [model]`, then paste the printed `[params]` into the config
 - Stack: `uv run python stack.py <comp> <member> ...` (members are folders in `preds/<comp>/`)
+- Public OOF banks (S6E11, same folds): `uv run kaggle datasets download <owner>/<bank> -p data/banks/<bank> --unzip` for each bank listed in `banks.py`, then `uv run python banks.py` writes `preds/<comp>/bank_<name>/` after checking their folds match ours. masayakawamata's GPT-2 is CC BY 4.0: credit it in anything published
 - Kaggle GPU models: script + `kernel-metadata.json` template in `kaggle/<model>/`; feature code is per episode, so a new episode points `[kernels.<name>] script` at its own script. Smoke-test locally with `SMOKE_ROWS=5000 INPUT_DIR=data/<comp>`. The pipeline writes the episode's metadata (`<owner>/<episode>-<name>-oof`) into `build/` and pushes from there.
 - Tracking: every `run()` and stack logs to MLflow (`sqlite:///mlflow.db`, one experiment per comp). UI: `uv run mlflow ui --backend-store-uri sqlite:///mlflow.db`
 - Test: `uv run pytest -q`
